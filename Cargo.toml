@@ -1,0 +1,13 @@
+[package]
+name = "micrawl"
+version = "1.0.0"
+authors = ["Mick de Peinder"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ url = "2.2.0"
+ reqwest = {version = "0.10.10", features = ["blocking"] }
+ select = "0.5.0"
+ clap = "2.33.3"
