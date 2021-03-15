@@ -61,10 +61,10 @@ impl Crawler {
 
                         self.print_result(result.status().as_str(), &current.url);
                         let from = result.url().clone(); //Clone here because Document::from_read() takes ownership of this object.
+                        self.crawled_pages.push(crawl_result);
                         if result.status().is_success() {
                             if self.is_same_domain(result.url()) || self.is_same_host(result.url())
                             {
-                                self.crawled_pages.push(crawl_result);
                                 if let Ok(doc) = Document::from_read(result) {
                                     self.extract_anchor_hrefs(&doc, &from);
                                     self.extract_form_actions(&doc, &from);
