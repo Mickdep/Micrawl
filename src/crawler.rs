@@ -59,7 +59,7 @@ impl Crawler {
                             url: current.url.clone(),
                         };
 
-                        self.print_result(result.status().as_str(), &current.url);
+                        self.print_result(result.status().as_str(), &current.url.as_str());
                         let from = result.url().clone(); //Clone here because Document::from_read() takes ownership of this object.
                         self.crawled_pages.push(crawl_result);
                         if result.status().is_success() {
@@ -81,7 +81,7 @@ impl Crawler {
                 }
             } else {
                 //If url is external we just print the result and at it to the crawled list.
-                self.print_result("...", &current.url);
+                self.print_result("...", &current.url.as_str());
                 let crawl_result = CrawlResult {
                     status_code: None,
                     url: current.url,
@@ -117,19 +117,7 @@ impl Crawler {
             .filter_map(|x| x.attr("action")) //Filter map to only contain the action values
             .for_each(|y| {
                 if let Ok(url) = from.join(y) {
-                    if self.should_crawl(&url) {
-                        if self.is_same_domain(&url)
-                            || self.is_same_host(&url)
-                            || self.list_external
-                        {
-                            let crawl_queue_item = CrawlQueueItem {
-                                is_external: !self.is_same_domain(&url) && !self.is_same_host(&url),
-                                url,
-                            };
-
-                            self.queue.push(crawl_queue_item);
-                        }
-                    }
+                    self.print_result("...", url.as_str());
                 }
             });
     }
@@ -231,7 +219,7 @@ impl Crawler {
         return Ok(());
     }
 
-    pub fn print_result(&self, status: &str, url: &Url) {
+    pub fn print_result(&self, status: &str, url: &str) {
         println!("[+] [{}]: {}", status, url);
     }
 }
