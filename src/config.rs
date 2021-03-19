@@ -27,8 +27,9 @@ impl ArgCollection {
         }
         
         if let Some(output_file) = arg_matches.value_of("output_file"){
-            if let Ok(mut path) = env::current_exe(){
-                path.set_file_name(output_file);
+            if let Ok(mut path) = env::current_dir(){
+                path.push(output_file);
+                println!("Path is: {:?}", path);
                 arg_collection.file = path;
             }else{
                 return Err("Could not resolve valid file path");
