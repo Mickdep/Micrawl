@@ -10,8 +10,6 @@ pub struct ArgCollection {
 
 impl ArgCollection {
     pub fn parse(arg_matches: ArgMatches) -> Result<ArgCollection, &'static str> {
-        //If not even the url argument is present we terminate immediately.
-        //Create struct to store values in. Initialised with temporary values.
         let mut arg_collection = ArgCollection {
             host: Url::parse("http://127.0.0.1").unwrap(), //Default vlaue
             file: PathBuf::new(),
@@ -22,7 +20,7 @@ impl ArgCollection {
             if let Ok(parsed_url) = Url::parse(url) {
                 arg_collection.host = parsed_url;
             }else{
-                return Err("Failed to parse host. Please check if you've specified the protocol prefix");
+                return Err("Failed to parse host. Please check if you've specified the protocol prefix.");
             }
         }
         
@@ -32,7 +30,7 @@ impl ArgCollection {
                 println!("Path is: {:?}", path);
                 arg_collection.file = path;
             }else{
-                return Err("Could not resolve valid file path");
+                return Err("Could not resolve valid file path.");
             }
         }
 
@@ -45,7 +43,7 @@ impl ArgCollection {
 
     pub fn validate(&self) -> Result<(), &'static str> {
         if let Err(_) = reqwest::blocking::get(self.host.as_str()) {
-            return Err("Failed to connect to host");
+            return Err("Failed to connect to host.");
         }
         return Ok(());
     }
