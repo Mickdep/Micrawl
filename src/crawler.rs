@@ -117,32 +117,49 @@ impl Crawler {
             .filter_map(|x| x.attr("action")) //Filter map to only contain the action values
             .for_each(|y| {
                 if let Ok(url) = from.join(y) {
-                    self.print_result("...", url.as_str());
+                    if !self.crawled_pages_contains(&url) {
+                        self.print_result("...", url.as_str());
+                        let crawl_result = CrawlResult {
+                            status_code: None,
+                            url,
+                        };
+                        self.crawled_pages.push(crawl_result);
+                    }
                 }
             });
     }
 
     fn should_crawl(&mut self, url: &Url) -> bool {
-        if self.block_list.iter().any(|elem| elem.as_str() == url.as_str()){
+        if self
+            .block_list
+            .iter()
+            .any(|elem| elem.as_str() == url.as_str())
+        {
             return false;
         }
-        //Only check for the path of the url, because test.com/testpage and test.org/testpage would show as different urls, but path is the same.
-        if !self
-            .crawled_pages
-            .iter()
-            .any(|elem| elem.url.as_str() == url.as_str())
-        {
-            //Check sure the queue doesn't already contain this.
-            if !self
-                .queue
-                .iter()
-                .any(|elem| elem.url.as_str() == url.as_str())
-            {
+        //Check if the url has already been crawled
+        if !self.crawled_pages_contains(url) {
+            //Make sure the queue doesn't already contain this.
+            if !self.queue_contains(url) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    fn queue_contains(&self, url: &Url) -> bool {
+        return self
+            .queue
+            .iter()
+            .any(|elem| elem.url.as_str() == url.as_str());
+    }
+
+    fn crawled_pages_contains(&self, url: &Url) -> bool {
+        return self
+            .crawled_pages
+            .iter()
+            .any(|elem| elem.url.as_str() == url.as_str());
     }
 
     fn is_same_domain(&self, url: &Url) -> bool {
