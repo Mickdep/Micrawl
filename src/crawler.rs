@@ -1,7 +1,14 @@
 use crate::config::ArgCollection;
-use reqwest::StatusCode;
+use reqwest::{StatusCode};
 use select::{document::Document, predicate::Name};
-use std::{fs, io::Write, path::PathBuf, time::Instant};
+use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
+    sync::mpsc::{self},
+    thread::{self, JoinHandle},
+    time::Instant,
+};
 use url::Url;
 
 pub struct Crawler {
@@ -11,7 +18,7 @@ pub struct Crawler {
     base: Url,
     file: PathBuf,
     start_time: Instant,
-    list_external: bool,
+    list_external: bool
 }
 
 pub struct CrawlResult {
@@ -22,6 +29,11 @@ pub struct CrawlResult {
 pub struct CrawlQueueItem {
     url: Url,
     is_external: bool,
+}
+
+pub struct ThreadResult {
+    url: Url,
+    result: Result<reqwest::blocking::Response, reqwest::Error>,
 }
 
 impl Crawler {
@@ -36,6 +48,7 @@ impl Crawler {
             list_external: arg_collection.list_external,
         };
 
+        //Add initial url to the queue.
         let crawl_queue_item = CrawlQueueItem {
             url: Url::parse(crawler.base.as_str()).unwrap(),
             is_external: false,
@@ -47,46 +60,87 @@ impl Crawler {
     }
 
     pub fn crawl(&mut self) {
-        let http_client = reqwest::blocking::Client::new();
-
-        while let Some(current) = self.queue.pop() {
-            if !current.is_external {
-                //Only make the request if URL is not external
-                match http_client.get(current.url.clone()).send() {
-                    Ok(result) => {
-                        let crawl_result = CrawlResult {
-                            status_code: Some(result.status()),
-                            url: current.url.clone(),
+        let (tx, rx) = mpsc::channel(); //Create sending an receiving channel for communication between threads.
+        loop {
+            if self.queue.is_empty() {
+                break;
+            }
+            let mut workers: Vec<JoinHandle<()>> = Vec::new();
+            // Create all worker threads in the loop below.
+            while let Some(current) = self.queue.pop() {
+                let thread_tx = tx.clone();
+                if current.is_external {
+                    //If url is external we just print the result and add it to the crawled list.
+                    self.print_result("...", &current.url.as_str());
+                    let crawl_result = CrawlResult {
+                        status_code: None,
+                        url: current.url,
+                    };
+                    self.crawled_pages.push(crawl_result);
+                } else if self.should_crawl(&current.url) {
+                    //Spawn thread that executes a GET request to the dequeued URL.
+                    let worker = thread::spawn(move || {
+                        let http_client = reqwest::blocking::Client::new();
+                        let result = http_client.get(current.url.clone()).send();
+                        let thread_result = ThreadResult {
+                            url: current.url,
+                            result,
                         };
+                        //Send this result over the mpsc channel
+                        if let Err(_) = thread_tx.send(thread_result) {
+                            eprintln!("Encountered an error in thread.");
+                        }
+                    });
+                    workers.push(worker);
+                }
+            }
 
-                        self.print_result(result.status().as_str(), &current.url.as_str());
-                        let from = result.url().clone(); //Clone here because Document::from_read() takes ownership of this object.
-                        self.crawled_pages.push(crawl_result);
-                        if result.status().is_success() {
-                            if self.is_same_domain(result.url()) || self.is_same_host(result.url())
-                            {
-                                if let Ok(doc) = Document::from_read(result) {
-                                    self.extract_anchor_hrefs(&doc, &from);
-                                    self.extract_form_actions(&doc, &from);
+            //Receive the results from all workers and process these.
+            for _ in &workers {
+                if let Ok(recv) = rx.recv() {
+                    match recv.result {
+                        Ok(result) => {
+
+                            let crawl_result = CrawlResult {
+                                status_code: Some(result.status()),
+                                url: recv.url.clone(),
+                            };
+
+                            self.print_result(
+                                crawl_result.status_code.unwrap().as_str(),
+                                crawl_result.url.as_str(),
+                            );
+                            let from = result.url().clone(); //Clone here because Document::from_read() takes ownership of this object.
+                            self.crawled_pages.push(crawl_result); //Register this URL as crawled by adding it to the vector.
+                            if result.status().is_success() {
+                                if self.is_same_domain(result.url())
+                                    || self.is_same_host(result.url())
+                                {
+                                    if let Ok(doc) = Document::from_read(result) {
+                                        self.extract_anchor_hrefs(&doc, &from);
+                                        self.extract_form_actions(&doc, &from);
+                                    }
                                 }
                             }
                         }
-                    }
-                    Err(result) => {
-                        if let Some(url) = result.url() {
-                            eprintln!("[!] Can't reach URL: {}", url);
-                            self.block_list.push(url.clone());
+                        Err(result) => {
+                            if let Some(url) = result.url() {
+                                eprintln!("[!] Can't reach URL: {}", url);
+                                self.block_list.push(url.clone());
+                            }
                         }
                     }
+                    // Do something with the results here
+                } else {
+                    eprintln!("Error occurred trying to receive value from thread.");
                 }
-            } else {
-                //If url is external we just print the result and at it to the crawled list.
-                self.print_result("...", &current.url.as_str());
-                let crawl_result = CrawlResult {
-                    status_code: None,
-                    url: current.url,
-                };
-                self.crawled_pages.push(crawl_result);
+            }
+
+            //Wait for all workers to finish.
+            for worker in workers {
+                if let Err(_) = worker.join() {
+                    eprintln!("Error with joining thread.");
+                }
             }
         }
     }
