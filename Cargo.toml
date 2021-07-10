@@ -11,3 +11,4 @@ edition = "2018"
  reqwest = {version = "0.10.10", features = ["blocking"] }
  select = "0.5.0"
  clap = "2.33.3"
+ randua = "0.1.6"

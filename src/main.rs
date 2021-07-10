@@ -1,11 +1,12 @@
 //- Begin of module tree definition -
 mod config;
 mod crawler;
+mod crawl_reporter;
 //- End of module tree definition -
 
 use clap::{self, App, Arg};
 use config::ArgCollection;
-use std::{process::exit};
+use std::process::exit;
 
 fn main() {
     print_banner();
@@ -31,22 +32,29 @@ fn main() {
             .help("Additionally look for external pointing links.")
             .takes_value(false)
             .required(false))
+        .arg(Arg::with_name("extract_robots_content")
+            .short("r")
+            .long("robots")
+            .value_name("extract_robots_content")
+            .help("Extract content from robots.txt.")
+            .takes_value(false)
+            .required(false))
+        .arg(Arg::with_name("threads")
+            .short("t")
+            .long("threads")
+            .value_name("threads")
+            .help("Specifies the amount of threads to operate with. Default 10. Max. 30.")
+            .takes_value(true)
+            .required(false))
             .get_matches();
 
-    match ArgCollection::parse(matches) {
+    match ArgCollection::parse(matches) { //Parse the arguments provided
         Ok(arg_collection) => {
-            match arg_collection.validate() {
+            match arg_collection.validate() { //Validate the arguments
                 Ok(_) => {
-                    let file_clone = arg_collection.file.clone(); //Clone here because we give Crawler ownership of the arg_collection.
+                    arg_collection.print(); //Show the config being used
                     let mut crawler = crawler::Crawler::new(arg_collection); //Needs to be mutable because the crawl function changes its internal state.
-                    crawler.print_config();
-                    crawler.crawl();
-                    crawler.print_stats();
-                    if file_clone.as_os_str().len() > 0 {
-                        if let Err(report_err) = crawler.report() {
-                            terminate(report_err);
-                        }
-                    }
+                    crawler.crawl(); //Crawl
                 }
                 Err(arg_validation_err) => {
                     terminate(arg_validation_err);
