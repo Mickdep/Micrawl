@@ -2,7 +2,6 @@ use crate::{config::ArgCollection, crawl_reporter};
 use reqwest::StatusCode;
 use select::{document::Document, predicate::Name};
 use std::{
-    path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
     thread::{self, JoinHandle},
     time::Instant,
@@ -13,14 +12,12 @@ pub struct Crawler {
     queue: Vec<CrawlQueueItem>,
     crawled_pages: Vec<CrawlResult>,
     block_list: Vec<Url>,
-    base: Url,
-    file: PathBuf,
+    config: ArgCollection,
     start_time: Instant,
-    list_external: bool,
-    extract_robots_content: bool,
-    threads: u8,
+    robots_content: Option<String>
 }
 
+#[derive(Clone)]
 pub struct CrawlResult {
     pub url: Url,
     pub status_code: Option<StatusCode>,
@@ -42,17 +39,14 @@ impl Crawler {
             queue: Vec::new(),
             crawled_pages: Vec::new(),
             block_list: Vec::new(),
-            base: arg_collection.host,
-            file: arg_collection.file,
+            config: arg_collection,
             start_time: Instant::now(),
-            list_external: arg_collection.list_external,
-            extract_robots_content: arg_collection.extract_robots_content,
-            threads: arg_collection.threads,
+            robots_content: None
         };
 
         //Add initial url to the queue.
         let crawl_queue_item = CrawlQueueItem {
-            url: Url::parse(crawler.base.as_str()).unwrap(),
+            url: Url::parse(crawler.config.host.as_str()).unwrap(),
             is_external: false,
         };
         crawler.queue.push(crawl_queue_item);
@@ -62,10 +56,13 @@ impl Crawler {
 
     pub fn crawl(&mut self) {
         //If we need to extract robots content; do so and print it.
-        if self.extract_robots_content {
-            let mut base_clone = self.base.as_str().to_owned();
+        if self.config.extract_robots_content {
+            let mut base_clone = self.config.host.as_str().to_owned();
             base_clone.push_str("/robots.txt");
-            self.extract_and_print_robots_content(Url::parse(&base_clone).unwrap());
+            if let Some(robots) = self.get_robots_content(Url::parse(&base_clone).unwrap()) {
+                self.print_robots_content(&robots);
+                self.robots_content = Some(robots);
+            }
         }
 
         let (tx, rx) = mpsc::channel(); //Create sending an receiving channel for communication between threads.
@@ -76,7 +73,7 @@ impl Crawler {
             let mut workers: Vec<JoinHandle<()>> = Vec::new();
 
             // Create all worker threads in the loop below.
-            while workers.len() < self.threads.into() {
+            while workers.len() < self.config.threads.into() {
                 if let Some(current) = self.queue.pop() {
                     if current.is_external {
                         //If url is external we just print the result and add it to the crawled list.
@@ -92,7 +89,7 @@ impl Crawler {
                         let worker = self.create_worker(current, thread_tx);
                         workers.push(worker);
                     }
-                }else{
+                } else {
                     break;
                 }
             }
@@ -111,8 +108,16 @@ impl Crawler {
         }
 
         self.print_stats();
-        if self.file.as_os_str().len() > 0 {
-            crawl_reporter::report(self.start_time, &self.crawled_pages, &self.file, &self.base)
+        if self.config.file.as_os_str().len() > 0 {
+            //We could use lifetimes here instead of cloning.
+            let report_info = crawl_reporter::ReportInfo {
+                crawled_pages: self.crawled_pages.clone(),
+                config: self.config.clone(),
+                robots: self.robots_content.clone(),
+                elapsed_secs: self.start_time.elapsed().as_secs(),
+                elapsed_ms: self.start_time.elapsed().subsec_millis()
+            };
+            crawl_reporter::report(report_info);
         }
     }
 
@@ -198,7 +203,7 @@ impl Crawler {
                     if self.should_crawl(&url) {
                         if self.is_same_domain(&url)
                             || self.is_same_host(&url)
-                            || self.list_external
+                            || self.config.list_external
                         {
                             let crawl_queue_item = CrawlQueueItem {
                                 is_external: !self.is_same_domain(&url) && !self.is_same_host(&url),
@@ -262,7 +267,7 @@ impl Crawler {
     }
 
     fn is_same_domain(&self, url: &Url) -> bool {
-        if let Some(base_domain) = self.base.domain() {
+        if let Some(base_domain) = self.config.host.domain() {
             if let Some(domain) = url.domain() {
                 if domain.contains(base_domain) {
                     return true;
@@ -273,7 +278,7 @@ impl Crawler {
     }
 
     fn is_same_host(&self, url: &Url) -> bool {
-        if let Some(base_host) = self.base.host_str() {
+        if let Some(base_host) = self.config.host.host_str() {
             if let Some(host) = url.host_str() {
                 if base_host == host {
                     return true;
@@ -294,7 +299,7 @@ impl Crawler {
         );
     }
 
-    pub fn extract_and_print_robots_content(&self, url: Url) {
+    pub fn get_robots_content(&self, url: Url) -> Option<String> {
         let http_client = reqwest::blocking::Client::new();
         let result = http_client
             .get(url)
@@ -303,11 +308,7 @@ impl Crawler {
         if let Ok(res) = result {
             if res.status().is_success() {
                 if let Ok(res_text) = res.text() {
-                    println!("");
-                    println!("=========== Robots.txt ==========");
-                    println!("{}", res_text.trim_end());
-                    println!("=================================");
-                    println!("");
+                    return Some(res_text.trim_end().to_string());
                 } else {
                     eprintln!("[!] Robots.txt exists but could not extract content. Please manually extract content.");
                 }
@@ -315,8 +316,17 @@ impl Crawler {
                 eprintln!("[!] Could not find the robots.txt file in the default location.");
             }
         }
+
+        return None;
     }
 
+    pub fn print_robots_content(&self, robots: &str) {
+        println!("");
+        println!("=========== Robots.txt ==========");
+        println!("{}", robots);
+        println!("=================================");
+        println!("");
+    }
     pub fn print_result(&self, status: &str, url: &str) {
         println!("[+] [{}]: {}", status, url);
     }

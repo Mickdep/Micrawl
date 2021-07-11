@@ -2,6 +2,7 @@ use clap::ArgMatches;
 use reqwest::Url;
 use std::{env, fs, path::PathBuf};
 
+#[derive(Clone)]
 pub struct ArgCollection {
     pub host: Url,
     pub file: PathBuf,
@@ -76,7 +77,7 @@ impl ArgCollection {
 
         if self.threads > self.max_threads {
             return Err("Can't run with more than 30 threads");
-        }else if self.threads < 1 {
+        } else if self.threads < 1 {
             return Err("Can't runt with less than 1 thread");
         }
 
@@ -86,7 +87,7 @@ impl ArgCollection {
     pub fn print(&self) {
         println!("[~] Crawling URL: {}", self.host);
         println!("[~] Running with {} threads", self.threads);
-        
+
         if self.file.as_os_str().len() > 0 {
             println!("[~] Writing output to file: {}", self.file.display());
         }
@@ -96,5 +97,23 @@ impl ArgCollection {
         if self.extract_robots_content {
             println!("[~] Extracting robots.txt content");
         }
+    }
+
+    pub fn as_string(&self) -> String {
+        let mut output = String::from(format!("[~] Crawling URL: {}\n", self.host));
+        output.push_str(format!("[~] Running with {} threads\n", self.threads).as_str());
+
+        if self.file.as_os_str().len() > 0 {
+            output.push_str(format!("[~] Writing output to file: {}\n", self.file.display()).as_str());
+        }
+        if self.list_external {
+            output.push_str(format!("[~] Listing external links\n").as_str());
+
+        }
+        if self.extract_robots_content {
+            output.push_str(format!("[~] Extracting robots.txt content\n").as_str());
+        }
+        output.push_str("\n");
+        return output;
     }
 }
