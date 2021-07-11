@@ -13,9 +13,9 @@ pub struct ArgCollection {
     max_threads: u8,
 }
 
-impl ArgCollection {
-    pub fn parse(arg_matches: ArgMatches) -> Result<ArgCollection, &'static str> {
-        let mut arg_collection = ArgCollection {
+impl Default for ArgCollection {
+    fn default() -> Self {
+        ArgCollection {
             host: Url::parse("http://127.0.0.1").unwrap(), //Default vlaue
             file: PathBuf::new(),
             list_external: false,
@@ -23,7 +23,13 @@ impl ArgCollection {
             threads: 10,
             should_report_to_file: false,
             max_threads: 30,
-        };
+        }
+    }
+}
+
+impl ArgCollection {
+    pub fn parse(arg_matches: ArgMatches) -> Result<ArgCollection, &'static str> {
+        let mut arg_collection = ArgCollection::default();
 
         if let Some(url) = arg_matches.value_of("url") {
             if let Ok(parsed_url) = Url::parse(url) {
