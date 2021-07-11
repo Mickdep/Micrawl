@@ -85,6 +85,8 @@ impl ArgCollection {
 
     pub fn print(&self) {
         println!("[~] Crawling URL: {}", self.host);
+        println!("[~] Running with {} threads", self.threads);
+        
         if self.file.as_os_str().len() > 0 {
             println!("[~] Writing output to file: {}", self.file.display());
         }
