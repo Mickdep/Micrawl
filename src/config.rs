@@ -9,7 +9,7 @@ pub struct ArgCollection {
     pub extract_robots_content: bool,
     pub threads: u8,
     should_report_to_file: bool,
-    max_threads: u8
+    max_threads: u8,
 }
 
 impl ArgCollection {
@@ -21,7 +21,7 @@ impl ArgCollection {
             extract_robots_content: false,
             threads: 10,
             should_report_to_file: false,
-            max_threads: 30
+            max_threads: 30,
         };
 
         if let Some(url) = arg_matches.value_of("url") {
@@ -55,7 +55,7 @@ impl ArgCollection {
         if let Some(threads) = arg_matches.value_of("threads") {
             if let Ok(res) = threads.parse::<u8>() {
                 arg_collection.threads = res;
-            }else{
+            } else {
                 return Err("Could not parse the amount of threads");
             }
         }
@@ -76,6 +76,8 @@ impl ArgCollection {
 
         if self.threads > self.max_threads {
             return Err("Can't run with more than 30 threads");
+        }else if self.threads < 1 {
+            return Err("Can't runt with less than 1 thread");
         }
 
         return Ok(());
