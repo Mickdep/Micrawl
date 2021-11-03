@@ -233,6 +233,10 @@ impl Crawler {
             });
     }
 
+    fn extract_images(&mut self, doc: &Document) {
+        
+    }
+
     fn should_crawl(&mut self, url: &Url) -> bool {
         if self
             .block_list

@@ -1,7 +1,7 @@
 //- Begin of module tree definition -
 mod config;
-mod crawler;
 mod crawl_reporter;
+mod crawler;
 //- End of module tree definition -
 
 use clap::{self, App, Arg};
@@ -46,11 +46,20 @@ fn main() {
             .help("Specifies the amount of threads to operate with. Default 10. Max. 30.")
             .takes_value(true)
             .required(false))
+        .arg(Arg::with_name("extract_images")
+            .short("i")
+            .long("images")
+            .value_name("extract_images")
+            .help("Download and store all images that are encountered.")
+            .takes_value(false)
+            .required(false))
             .get_matches();
 
-    match ArgCollection::parse(matches) { //Parse the arguments provided
+    match ArgCollection::parse(matches) {
+        //Parse the arguments provided
         Ok(arg_collection) => {
-            match arg_collection.validate() { //Validate the arguments
+            match arg_collection.validate() {
+                //Validate the arguments
                 Ok(_) => {
                     arg_collection.print(); //Show the config being used
                     let mut crawler = crawler::Crawler::new(arg_collection); //Needs to be mutable because the crawl function changes its internal state.
