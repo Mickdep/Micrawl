@@ -77,9 +77,9 @@ impl ArgCollection {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
-        if let Err(_) = reqwest::blocking::get(self.host.as_str()) {
-            return Err("Failed to connect to host");
-        }
+        // if let Err(_) = reqwest::blocking::get(self.host.as_str()) {
+        //     return Err("Failed to connect to host");
+        // }
 
         if self.should_report_to_file {
             if let Err(_) = fs::File::create(&self.file) {

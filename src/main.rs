@@ -8,7 +8,8 @@ use clap::{self, App, Arg};
 use config::ArgCollection;
 use std::process::exit;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     print_banner();
     let matches = App::new("Micrawl")
         .arg(Arg::with_name("url")
@@ -63,7 +64,7 @@ fn main() {
                 Ok(_) => {
                     arg_collection.print(); //Show the config being used
                     let mut crawler = crawler::Crawler::new(arg_collection); //Needs to be mutable because the crawl function changes its internal state.
-                    crawler.crawl(); //Crawl
+                    crawler.crawl().await; //Crawl
                 }
                 Err(arg_validation_err) => {
                     terminate(arg_validation_err);

@@ -1,4 +1,4 @@
-use std::{fs, io::Write, time::Instant};
+use std::{fs, io::Write};
 use crate::{config::ArgCollection, crawler::CrawlResult};
 
 #[derive(Clone)]
