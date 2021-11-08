@@ -2,6 +2,7 @@
 mod config;
 mod crawl_reporter;
 mod crawler;
+mod robots;
 //- End of module tree definition -
 
 use clap::{self, App, Arg};
