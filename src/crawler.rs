@@ -1,31 +1,19 @@
 use crate::{config::ArgCollection, crawl_reporter, robots};
 use futures::stream::FuturesUnordered;
-use reqwest::{Error, Response, StatusCode};
+use reqwest::{Error, Response};
 use select::{document::Document, predicate::Name};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::task::JoinHandle;
 use url::Url;
 
 pub struct Crawler {
-    queue: Vec<CrawlQueueEntry>,
-    crawled_pages: Vec<CrawlResult>,
+    queue: Vec<Url>,
+    crawled_pages: Vec<Url>,
     block_list: Vec<Url>,
-    found_links: Vec<Url>,
+    discovered_links: Vec<Url>,
     config: ArgCollection,
     start_time: Instant,
     robots_content: Option<String>,
-}
-
-#[derive(Clone)]
-pub struct CrawlResult {
-    pub url: Url,
-    pub status_code: Option<StatusCode>,
-}
-
-#[derive(Clone)]
-struct CrawlQueueEntry {
-    url: Url,
-    is_external: bool,
 }
 
 impl Crawler {
@@ -34,18 +22,16 @@ impl Crawler {
             queue: Vec::new(),
             crawled_pages: Vec::new(),
             block_list: Vec::new(),
-            found_links: Vec::new(),
+            discovered_links: Vec::new(),
             config: arg_collection,
             start_time: Instant::now(),
             robots_content: None,
         };
 
         //Add initial url to the queue.
-        let crawl_queue_item = CrawlQueueEntry {
-            url: Url::parse(crawler.config.host.as_str()).unwrap(),
-            is_external: false,
-        };
-        crawler.queue.push(crawl_queue_item);
+        crawler
+            .queue
+            .push(Url::parse(crawler.config.host.as_str()).unwrap());
 
         return crawler;
     }
@@ -67,11 +53,10 @@ impl Crawler {
 
             let tasks = FuturesUnordered::new();
             while let Some(current) = self.queue.pop() {
-                println!("Adding task for url {}", &current.url);
                 let client_clone = client.clone();
                 let handle: JoinHandle<Result<Response, Error>> = tokio::spawn(async move {
                     let result = client_clone
-                        .get(current.url)
+                        .get(current)
                         .header("User-Agent", randua::new().to_string())
                         .send()
                         .await;
@@ -89,45 +74,50 @@ impl Crawler {
             for result in results {
                 if let Ok(unwrapped) = result {
                     if let Ok(response) = unwrapped {
-                        let crawl_result = CrawlResult {
-                            status_code: Some(response.status()),
-                            url: response.url().clone(),
-                        };
-
-                        self.crawled_pages.push(crawl_result); //Register this URL as crawled by adding it to the vector.
+                        self.crawled_pages.push(response.url().clone()); //Register this URL as crawled by adding it to the list.
 
                         let from_url = response.url().clone(); //Clone here because response.text() consumes the object.
                         if response.status().is_success() {
                             if let Ok(text) = response.text().await {
                                 let doc = Document::from(text.as_str());
 
-                                //Extract all anchor hrefs and try to join them with the url that the current request was done to
-                                let anchor_hrefs = self.extract_anchor_hrefs(&doc);
-                                for str in anchor_hrefs {
-                                    if let Ok(url) = Url::parse(&str){
-                                        if !self.found_links.contains(&url) {
-                                            self.found_links.push(url);
+                                let anchor_hrefs = self.extract_anchor_hrefs(&doc, &from_url);
+                                for url in anchor_hrefs {
+                                    if self.should_print(&url) {
+                                        if self.is_external(&url) {
+                                            if self.config.list_external {
+                                                self.print_finding("↗", &url);
+                                            }
+                                        } else {
+                                            self.print_finding("🔗", &url);
                                         }
+                                    }
+
+                                    if !self.discovered_links.contains(&url) {
+                                        if self.is_external(&url){
+                                            if self.config.list_external {
+                                                self.discovered_links.push(url.clone());
+                                            }
+                                        }else{
+                                            self.discovered_links.push(url.clone());
+
+                                        }
+                                    }
+
+                                    if self.should_enqueue(&url) {
+                                        self.queue.push(url);
                                     }
                                 }
 
-                                //Extract all form actions and try to join them with the url that the current request was done to
-                                let form_actions = self
-                                    .extract_form_actions(&doc)
-                                    .iter()
-                                    .filter_map(|x| Url::parse(x).ok())
-                                    .collect();
-
-                                //Print all results
-                                self.print_findings(form_actions);
-                                self.print_findings(anchor_hrefs);
-
-                                //Now...Here we check which other pages we are going to add to the queue and/or going to crawl.
-                                anchor_hrefs.iter().for_each(|x| {
-                                    if self.should_crawl(x) {
-                                        self.queue.push(value)
+                                let form_actions = self.extract_form_actions(&doc, &from_url);
+                                for url in form_actions {
+                                    if self.should_print(&url) {
+                                        self.print_finding("📜", &url);
+                                        if !self.discovered_links.contains(&url) {
+                                            self.discovered_links.push(url);
+                                        }
                                     }
-                                });
+                                }
                             }
                         }
                     }
@@ -138,7 +128,7 @@ impl Crawler {
         if self.config.file.as_os_str().len() > 0 {
             //We could use lifetimes here instead of cloning.
             let report_info = crawl_reporter::ReportInfo {
-                crawled_pages: self.crawled_pages.clone(),
+                discovered_links: self.discovered_links.clone(),
                 config: self.config.clone(),
                 robots: self.robots_content.clone(),
                 elapsed_secs: self.start_time.elapsed().as_secs(),
@@ -148,30 +138,35 @@ impl Crawler {
         }
     }
 
-    fn extract_anchor_hrefs(&mut self, doc: &Document) -> Vec<String> {
+    fn extract_anchor_hrefs(&mut self, doc: &Document, from: &Url) -> Vec<Url> {
         let mut results = Vec::new();
         doc.find(Name("a")) //Find all anchor tags
             .filter_map(|x| x.attr("href")) //Filter map to only contain the href values
             .for_each(|y| {
-                results.push(String::from(y));
+                if let Ok(url) = from.join(y) {
+                    results.push(url);
+                }
             });
         return results;
     }
 
-    fn extract_form_actions(&mut self, doc: &Document) -> Vec<String> {
+    fn extract_form_actions(&mut self, doc: &Document, from: &Url) -> Vec<Url> {
         let mut results = Vec::new();
         doc.find(Name("form")) //Find all form tags
             .filter_map(|x| x.attr("action")) //Filter map to only contain the action values
             .for_each(|y| {
-                results.push(String::from(y));
+                if let Ok(url) = from.join(y) {
+                    results.push(url);
+                }
             });
         return results;
     }
 
-    fn should_crawl(&mut self, url: &Url) -> bool {
+    fn should_enqueue(&mut self, url: &Url) -> bool {
         return !self.already_crawled(url)
             && !self.is_in_queue(url)
             && !self.is_in_blocklist(url)
+            && !self.is_external(url)
             && self.is_webpage(url);
     }
 
@@ -197,21 +192,22 @@ impl Crawler {
     }
 
     fn is_in_queue(&self, url: &Url) -> bool {
-        return self
-            .queue
-            .iter()
-            .any(|elem| elem.url.as_str() == url.as_str());
+        return self.queue.iter().any(|elem| elem.as_str() == url.as_str());
     }
 
     fn already_crawled(&self, url: &Url) -> bool {
         return self
             .crawled_pages
             .iter()
-            .any(|elem| elem.url.as_str() == url.as_str());
+            .any(|elem| elem.as_str() == url.as_str());
     }
 
     fn is_external(&self, url: &Url) -> bool {
         return !self.is_same_domain(url) && !self.is_same_host(url);
+    }
+
+    fn should_print(&self, url: &Url) -> bool {
+        return !self.discovered_links.contains(url);
     }
 
     fn is_same_domain(&self, url: &Url) -> bool {
@@ -236,10 +232,8 @@ impl Crawler {
         return false;
     }
 
-    pub fn print_findings(&self, findings: Vec<Url>) {
-        for url in findings {
-            println!("[+] {}", url);
-        }
+    pub fn print_finding(&self, prepend: &str, finding: &Url) {
+        println!("{} {}", prepend, finding);
     }
 
     pub fn print_stats(&self) {
@@ -247,7 +241,7 @@ impl Crawler {
         let elapsed_ms = self.start_time.elapsed().subsec_millis();
         println!(
             "\nFound {} links in {}.{} sec.",
-            self.crawled_pages.len(),
+            self.discovered_links.len(),
             elapsed,
             elapsed_ms
         );
@@ -259,9 +253,5 @@ impl Crawler {
         println!("{}", robots);
         println!("=================================");
         println!("");
-    }
-
-    pub fn print_result(&self, status: &str, url: &str) {
-        println!("[+] [{}]: {}", status, url);
     }
 }

@@ -41,20 +41,6 @@ async fn main() {
             .help("Extract content from robots.txt.")
             .takes_value(false)
             .required(false))
-        .arg(Arg::with_name("threads")
-            .short("t")
-            .long("threads")
-            .value_name("threads")
-            .help("Specifies the amount of threads to operate with. Default 10. Max. 30.")
-            .takes_value(true)
-            .required(false))
-        .arg(Arg::with_name("extract_images")
-            .short("i")
-            .long("images")
-            .value_name("extract_images")
-            .help("Download and store all images that are encountered.")
-            .takes_value(false)
-            .required(false))
             .get_matches();
 
     match ArgCollection::parse(matches) {

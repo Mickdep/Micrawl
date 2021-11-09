@@ -1,9 +1,11 @@
 use std::{fs, io::Write};
-use crate::{config::ArgCollection, crawler::CrawlResult};
+use reqwest::Url;
+
+use crate::config::ArgCollection;
 
 #[derive(Clone)]
 pub struct ReportInfo{
-    pub crawled_pages: Vec<CrawlResult>,
+    pub discovered_links: Vec<Url>,
     pub config: ArgCollection,
     pub robots: Option<String>,
     pub elapsed_secs: u64,
@@ -24,19 +26,15 @@ pub fn report(report_info: ReportInfo) {
         }
         
         //Append all the crawled pages
-        for result in &report_info.crawled_pages {
-            if let Some(status) = result.status_code {
-                output.push_str(&format!("[{}] {} \n", status.as_str(), result.url));
-            } else {
-                output.push_str(&format!("[...] {} \n", result.url));
-            }
+        for url in &report_info.discovered_links {
+                output.push_str(&format!("[+] {} \n", url));
         }
 
         //Append the final info (amount of crawled pages and the elapsed time)
         output.push_str(
             &format!(
                 "\nFound {} links in {}.{} sec.",
-                report_info.crawled_pages.len(),
+                report_info.discovered_links.len(),
                 report_info.elapsed_secs,
                 report_info.elapsed_ms
             ),
