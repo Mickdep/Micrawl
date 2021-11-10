@@ -1,14 +1,16 @@
 //- Begin of module tree definition -
 mod config;
-mod crawler;
 mod crawl_reporter;
+mod crawler;
+mod robots;
 //- End of module tree definition -
 
 use clap::{self, App, Arg};
 use config::ArgCollection;
 use std::process::exit;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     print_banner();
     let matches = App::new("Micrawl")
         .arg(Arg::with_name("url")
@@ -39,22 +41,17 @@ fn main() {
             .help("Extract content from robots.txt.")
             .takes_value(false)
             .required(false))
-        .arg(Arg::with_name("threads")
-            .short("t")
-            .long("threads")
-            .value_name("threads")
-            .help("Specifies the amount of threads to operate with. Default 10. Max. 30.")
-            .takes_value(true)
-            .required(false))
             .get_matches();
 
-    match ArgCollection::parse(matches) { //Parse the arguments provided
+    match ArgCollection::parse(matches) {
+        //Parse the arguments provided
         Ok(arg_collection) => {
-            match arg_collection.validate() { //Validate the arguments
+            match arg_collection.validate() {
+                //Validate the arguments
                 Ok(_) => {
                     arg_collection.print(); //Show the config being used
                     let mut crawler = crawler::Crawler::new(arg_collection); //Needs to be mutable because the crawl function changes its internal state.
-                    crawler.crawl(); //Crawl
+                    crawler.crawl().await; //Crawl
                 }
                 Err(arg_validation_err) => {
                     terminate(arg_validation_err);

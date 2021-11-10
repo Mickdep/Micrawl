@@ -8,7 +8,9 @@ edition = "2018"
 
 [dependencies]
  url = "2.2.0"
- reqwest = {version = "0.10.10", features = ["blocking"] }
+ reqwest =  {version = "0.11.6", features = ["blocking"] }
  select = "0.5.0"
  clap = "2.33.3"
  randua = "0.1.6"
+ tokio = {version = "1.13.0", features = ["full"] }
+ futures = "0.3.17"
