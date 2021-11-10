@@ -1,4 +1,3 @@
-use reqwest::Url;
 use std::{fs, io::Write};
 
 use crate::{config::ArgCollection, crawler::{CrawlResult, UrlType}};
