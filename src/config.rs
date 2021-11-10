@@ -81,7 +81,7 @@ impl ArgCollection {
             println!("[~] Extracting robots.txt content");
         }
 
-        println!("\n");
+        println!("");
     }
 
     pub fn as_string(&self) -> String {

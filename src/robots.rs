@@ -25,7 +25,7 @@ fn get_robots_content(url: Url) -> Option<String> {
                 eprintln!("[!] Robots.txt exists but could not extract content. Please manually extract content.");
             }
         } else {
-            eprintln!("[!] Could not find the robots.txt file in the default location.");
+            eprintln!("[!] Robots.txt not found at the default location.");
         }
     }
 

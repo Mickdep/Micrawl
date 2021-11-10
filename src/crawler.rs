@@ -6,14 +6,26 @@ use std::time::Instant;
 use tokio::task::JoinHandle;
 use url::Url;
 
+#[derive(PartialEq, Clone)]
+pub enum UrlType {
+    Link,
+    Form,
+    External
+}
 pub struct Crawler {
     queue: Vec<Url>,
     crawled_pages: Vec<Url>,
     block_list: Vec<Url>,
-    discovered_links: Vec<Url>,
+    discovered_links: Vec<CrawlResult>,
     config: ArgCollection,
     start_time: Instant,
     robots_content: Option<String>,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct CrawlResult {
+    pub url: Url,
+    pub url_type: UrlType
 }
 
 impl Crawler {
@@ -44,8 +56,12 @@ impl Crawler {
             }
         }
 
+        //Don't want to match on Ok or Error here. Just panic if no client can be constructed.
+        // let client = reqwest::ClientBuilder::new()
+        //     .redirect(Policy::none())
+        //     .build().unwrap();
+        
         let client = reqwest::Client::new(); //Create single Client and clone that so we make use of the connection pool. https://docs.rs/reqwest/0.10.9/reqwest/struct.Client.html
-
         loop {
             if self.queue.is_empty() {
                 break;
@@ -54,6 +70,7 @@ impl Crawler {
             let tasks = FuturesUnordered::new();
             while let Some(current) = self.queue.pop() {
                 let client_clone = client.clone();
+                self.crawled_pages.push(current.clone());
                 let handle: JoinHandle<Result<Response, Error>> = tokio::spawn(async move {
                     let result = client_clone
                         .get(current)
@@ -74,7 +91,7 @@ impl Crawler {
             for result in results {
                 if let Ok(unwrapped) = result {
                     if let Ok(response) = unwrapped {
-                        self.crawled_pages.push(response.url().clone()); //Register this URL as crawled by adding it to the list.
+                        // self.crawled_pages.push(response.url().clone()); //Register this URL as crawled by adding it to the list.
 
                         let from_url = response.url().clone(); //Clone here because response.text() consumes the object.
                         if response.status().is_success() {
@@ -93,28 +110,39 @@ impl Crawler {
                                         }
                                     }
 
-                                    if !self.discovered_links.contains(&url) {
-                                        if self.is_external(&url){
-                                            if self.config.list_external {
-                                                self.discovered_links.push(url.clone());
-                                            }
-                                        }else{
-                                            self.discovered_links.push(url.clone());
+                                    if self.should_enqueue(&url) {
+                                        self.queue.push(url.clone());
+                                    }
 
+ 
+
+                                    if !self.discovered_links.iter().any(|elem| &elem.url == &url) {
+                                        let mut crawl_result = CrawlResult {
+                                            url,
+                                            url_type: UrlType::Link
+                                        };
+                                        if self.is_external(&crawl_result.url) {
+                                            if self.config.list_external {
+                                                crawl_result.url_type = UrlType::External;
+                                                self.discovered_links.push(crawl_result);
+                                            }
+                                        } else {
+                                            self.discovered_links.push(crawl_result);
                                         }
                                     }
 
-                                    if self.should_enqueue(&url) {
-                                        self.queue.push(url);
-                                    }
                                 }
 
                                 let form_actions = self.extract_form_actions(&doc, &from_url);
                                 for url in form_actions {
                                     if self.should_print(&url) {
-                                        self.print_finding("📜", &url);
-                                        if !self.discovered_links.contains(&url) {
-                                            self.discovered_links.push(url);
+                                        self.print_finding("📝", &url);
+                                        if !self.discovered_links.iter().any(|elem| &elem.url == &url) {
+                                            let crawl_result = CrawlResult {
+                                                url,
+                                                url_type: UrlType::Form
+                                            };
+                                            self.discovered_links.push(crawl_result);
                                         }
                                     }
                                 }
@@ -207,7 +235,7 @@ impl Crawler {
     }
 
     fn should_print(&self, url: &Url) -> bool {
-        return !self.discovered_links.contains(url);
+        return !self.discovered_links.iter().any(|elem| &elem.url == url);
     }
 
     fn is_same_domain(&self, url: &Url) -> bool {
@@ -248,10 +276,9 @@ impl Crawler {
     }
 
     pub fn print_robots_content(&self, robots: &str) {
-        println!("");
-        println!("=========== Robots.txt ==========");
+        println!("=========== Robots.txt ===========");
         println!("{}", robots);
-        println!("=================================");
+        println!("==================================");
         println!("");
     }
 }
